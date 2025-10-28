@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Executive Function Tracker</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for a clean, mobile-first design */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f9;
+        }
+        /* Custom timer colors */
+        .timer-running {
+            background-color: #34D399; /* Green-400 */
+        }
+        .timer-paused {
+            background-color: #FBBF24; /* Amber-400 */
+        }
+        /* PWA Styling for App-like experience */
+        @media all and (display-mode: standalone) {
+            .pwa-message {
+                display: none !important;
+            }
+        }
+
+        /* Scrollbar styling for better feel */
+        .task-list::-webkit-scrollbar {
+            width: 8px;
+        }
+        .task-list::-webkit-scrollbar-thumb {
+            background-color: #D1D5DB; /* Gray-300 */
+            border-radius: 4px;
+        }
+        .task-list::-webkit-scrollbar-track {
+            background-color: #F3F4F6; /* Gray-100 */
+        }
+    </style>
+    <!-- PWA / Home Screen Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://placehold.co/180x180/10B981/ffffff?text=EF">
+</head>
+<body class="min-h-screen p-4 flex flex-col items-center">
+
+    <!-- Main Container -->
+    <div id="app-container" class="w-full max-w-md bg-white rounded-xl shadow-2xl p-6 transition-all duration-300">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">Executive Tracker</h1>
+        <p class="text-sm text-gray-500 mb-6">Plan, focus, and track your tasks with saved progress.</p>
+
+        <!-- PWA Instructions / User ID Display -->
+        <div id="status-area" class="text-xs text-center p-2 mb-4 rounded-lg bg-indigo-50 text-indigo-700">
+            <div id="user-id-display" class="font-mono truncate">Loading User...</div>
+            <p id="pwa-message" class="mt-1 font-semibold">
+                Use your browser's "Add to Home Screen" feature to run this like a native app!
+            </p>
+        </div>
+
+        <!-- New Task Form -->
+        <form id="task-form" class="flex flex-col gap-3 mb-6">
+            <input type="text" id="task-name" placeholder="What task needs attention?" required
+                   class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition duration-150">
+            <textarea id="task-breakdown" placeholder="Optional: Breakdown steps (1 per line) or goal."
+                      class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition duration-150 h-20 resize-none"></textarea>
+            <button type="submit"
+                    class="bg-indigo-600 text-white font-semibold py-3 rounded-xl hover:bg-indigo-700 transition duration-200 shadow-md">
+                Add Task
+            </button>
+        </form>
+
+        <!-- Task List Header -->
+        <h2 class="text-xl font-semibold text-gray-700 mb-3 border-b pb-2">Active Tasks</h2>
+
+        <!-- Task List -->
+        <div id="task-list" class="task-list space-y-3 max-h-96 overflow-y-auto">
+            <!-- Tasks will be injected here -->
+            <p id="loading-message" class="text-center text-gray-500 p-4">Awaiting task data...</p>
+        </div>
+    </div>
+
+    <!-- Hidden Modal for Task Details / Time Tracking -->
+    <div id="task-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
+            <h3 id="modal-task-name" class="text-xl font-bold text-gray-800 mb-3">Task Name</h3>
+
+            <!-- Timer Display -->
+            <div class="text-center mb-4">
+                <div id="modal-timer-display" class="text-5xl font-extrabold text-gray-800 p-4 rounded-lg transition-colors duration-300">
+                    00:00:00
+                </div>
+            </div>
+
+            <!-- Breakdown -->
+            <div class="mb-4">
+                <p class="font-semibold text-gray-700 mb-1">Breakdown/Goal:</p>
+                <p id="modal-task-breakdown" class="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg whitespace-pre-wrap"></p>
+            </div>
+
+            <!-- Timer Controls -->
+            <div class="flex gap-2 mb-4">
+                <button id="modal-start-pause-btn" class="flex-1 text-white py-2 rounded-lg font-semibold shadow-md transition-colors duration-200">
+                    Start
+                </button>
+                <button id="modal-reset-btn" class="bg-gray-400 hover:bg-gray-500 text-white py-2 px-4 rounded-lg font-semibold shadow-md transition-colors duration-200">
+                    Reset
+                </button>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex justify-between gap-3">
+                <button id="modal-complete-btn" class="flex-1 bg-green-500 text-white py-3 rounded-xl hover:bg-green-600 font-semibold shadow-lg transition-colors duration-200">
+                    Mark as Complete
+                </button>
+                <button id="modal-close-btn" class="w-1/4 bg-red-100 text-red-600 py-3 rounded-xl hover:bg-red-200 font-semibold transition-colors duration-200">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, orderBy, addDoc, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- GLOBAL FIREBASE VARIABLES (Provided by Canvas Environment) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { /* mock config if needed */ };
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        setLogLevel('debug'); // Enable detailed Firebase logging
+
+        let userId = null;
+        let currentTaskId = null;
+        let tasks = {};
+        let timerInterval = null;
+
+        const taskList = document.getElementById('task-list');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const loadingMessage = document.getElementById('loading-message');
+
+        // Modal Elements
+        const modal = document.getElementById('task-modal');
+        const modalTaskName = document.getElementById('modal-task-name');
+        const modalTaskBreakdown = document.getElementById('modal-task-breakdown');
+        const modalTimerDisplay = document.getElementById('modal-timer-display');
+        const startPauseBtn = document.getElementById('modal-start-pause-btn');
+        const resetBtn = document.getElementById('modal-reset-btn');
+        const completeBtn = document.getElementById('modal-complete-btn');
+        const closeBtn = document.getElementById('modal-close-btn');
+
+        // --- AUTHENTICATION ---
+        async function authenticate() {
+            try {
+                // Set persistence to keep user signed in
+                await setPersistence(auth, browserLocalPersistence);
+
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Firebase Auth Error:", error);
+                userIdDisplay.textContent = 'Auth Error!';
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                userId = user.uid;
+                userIdDisplay.textContent = `User ID: ${userId}`;
+                // Start listening to the database only after auth is ready
+                setupFirestoreListener();
+            } else {
+                // If onAuthStateChanged returns null, sign in anonymously or with custom token
+                if (!userId) {
+                    authenticate();
+                }
+            }
+        });
+
+        // --- FIRESTORE UTILITIES ---
+        function getCollectionRef() {
+            if (!userId) return null;
+            // Private data path for this specific app's executive tasks
+            return collection(db, `artifacts/${appId}/users/${userId}/executive_tasks`);
+        }
+
+        // --- TIME UTILITIES ---
+        function formatTime(totalSeconds) {
+            const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+            const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+            const s = String(totalSeconds % 60).padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        }
+
+        function updateTimerDisplay(duration) {
+            modalTimerDisplay.textContent = formatTime(Math.round(duration / 1000));
+        }
+
+        function updateTimerState(task) {
+            clearInterval(timerInterval);
+            let duration = task.duration || 0;
+            const status = task.status;
+
+            if (status === 'active') {
+                modalTimerDisplay.classList.remove('timer-paused', 'bg-gray-100');
+                modalTimerDisplay.classList.add('timer-running');
+                startPauseBtn.textContent = 'Pause';
+                startPauseBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+                startPauseBtn.classList.add('bg-orange-500', 'hover:bg-orange-600');
+
+                // Start or resume counting
+                const elapsedSinceStart = Date.now() - task.startTime;
+                duration += elapsedSinceStart;
+                updateTimerDisplay(duration);
+
+                timerInterval = setInterval(() => {
+                    duration += 1000;
+                    updateTimerDisplay(duration);
+                }, 1000);
+
+            } else {
+                // Paused or Pending
+                modalTimerDisplay.classList.remove('timer-running');
+                modalTimerDisplay.classList.add('timer-paused', 'bg-gray-100');
+                startPauseBtn.textContent = 'Start';
+                startPauseBtn.classList.remove('bg-orange-500', 'hover:bg-orange-600');
+                startPauseBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                updateTimerDisplay(duration);
+            }
+        }
+
+        // --- MODAL HANDLERS ---
+        function openModal(taskId) {
+            currentTaskId = taskId;
+            const task = tasks[taskId];
+            if (!task) return;
+
+            modalTaskName.textContent = task.name;
+            modalTaskBreakdown.textContent = task.breakdown || 'No breakdown provided.';
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            updateTimerState(task);
+        }
+
+        closeBtn.addEventListener('click', () => {
+            modal.classList.remove('flex');
+            modal.classList.add('hidden');
+            clearInterval(timerInterval);
+            currentTaskId = null;
+        });
+
+        startPauseBtn.addEventListener('click', async () => {
+            if (!currentTaskId) return;
+
+            const task = tasks[currentTaskId];
+            if (!task) return;
+
+            const taskRef = doc(db, `artifacts/${appId}/users/${userId}/executive_tasks`, currentTaskId);
+
+            if (task.status === 'active') {
+                // Pause: update duration, set status to pending, clear startTime
+                const newDuration = (task.duration || 0) + (Date.now() - task.startTime);
+                await updateDoc(taskRef, {
+                    status: 'pending',
+                    duration: newDuration,
+                    startTime: null,
+                });
+            } else {
+                // Start: set status to active, set new startTime
+                await updateDoc(taskRef, {
+                    status: 'active',
+                    startTime: Date.now(),
+                });
+            }
+        });
+
+        resetBtn.addEventListener('click', async () => {
+            if (!currentTaskId) return;
+            const taskRef = doc(db, `artifacts/${appId}/users/${userId}/executive_tasks`, currentTaskId);
+
+            await updateDoc(taskRef, {
+                status: 'pending',
+                duration: 0,
+                startTime: null,
+            });
+        });
+
+        completeBtn.addEventListener('click', async () => {
+            if (!currentTaskId) return;
+
+            // Pause and clear timer
+            clearInterval(timerInterval);
+
+            // Calculate final duration
+            const task = tasks[currentTaskId];
+            let finalDuration = task.duration || 0;
+            if (task.status === 'active') {
+                finalDuration += (Date.now() - task.startTime);
+            }
+
+            const taskRef = doc(db, `artifacts/${appId}/users/${userId}/executive_tasks`, currentTaskId);
+
+            await updateDoc(taskRef, {
+                status: 'complete',
+                duration: finalDuration,
+                startTime: null,
+            });
+
+            // Close the modal
+            closeBtn.click();
+        });
+
+
+        // --- TASK RENDERING & UI ---
+        function renderTasks() {
+            // Sort tasks: Active first, then pending, then completed
+            const sortedTasks = Object.keys(tasks)
+                .map(id => ({ id, ...tasks[id] }))
+                .sort((a, b) => {
+                    const statusOrder = { 'active': 0, 'pending': 1, 'complete': 2 };
+                    if (statusOrder[a.status] !== statusOrder[b.status]) {
+                        return statusOrder[a.status] - statusOrder[b.status];
+                    }
+                    // Secondary sort by creation time
+                    return a.createdAt - b.createdAt;
+                });
+
+            taskList.innerHTML = '';
+            loadingMessage.classList.add('hidden'); // Hide loading message once data arrives
+
+            if (sortedTasks.length === 0) {
+                 taskList.innerHTML = '<p class="text-center text-gray-400 p-4">No tasks yet. Add one above to get started!</p>';
+                 return;
+            }
+
+            sortedTasks.forEach(task => {
+                const isComplete = task.status === 'complete';
+                const isRunning = task.status === 'active';
+                const totalSeconds = Math.round((task.duration || 0) / 1000) + (isRunning ? Math.round((Date.now() - task.startTime) / 1000) : 0);
+
+                const taskElement = document.createElement('div');
+                taskElement.className = `task-card p-4 rounded-xl shadow-lg flex justify-between items-center transition-all duration-300 ${isComplete ? 'bg-green-50' : isRunning ? 'bg-indigo-100' : 'bg-white hover:bg-gray-50'} border-l-4 ${isComplete ? 'border-green-500' : isRunning ? 'border-indigo-500' : 'border-gray-200'}`;
+
+                taskElement.innerHTML = `
+                    <div class="flex-1 min-w-0">
+                        <p class="text-lg font-semibold truncate ${isComplete ? 'line-through text-gray-500' : 'text-gray-800'}">${task.name}</p>
+                        <p class="text-sm text-gray-500 mt-1">
+                            ${isRunning ? '🕒 Active' : isComplete ? '✅ Complete' : '⏸️ Pending'} | 
+                            Time: <span class="font-mono">${formatTime(totalSeconds)}</span>
+                        </p>
+                    </div>
+                    <div class="flex gap-2 ml-4">
+                        <button data-id="${task.id}" class="open-modal-btn bg-indigo-500 text-white p-2 rounded-full shadow-md hover:bg-indigo-600 transition-colors duration-200" title="View/Edit">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                              <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+                              <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        <button data-id="${task.id}" class="delete-task-btn bg-red-400 text-white p-2 rounded-full shadow-md hover:bg-red-500 transition-colors duration-200" title="Delete">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                              <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </div>
+                `;
+
+                taskList.appendChild(taskElement);
+            });
+
+            // Re-attach event listeners after rendering
+            document.querySelectorAll('.open-modal-btn').forEach(button => {
+                button.addEventListener('click', (e) => openModal(e.currentTarget.dataset.id));
+            });
+
+            document.querySelectorAll('.delete-task-btn').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    const taskIdToDelete = e.currentTarget.dataset.id;
+                    if (confirm('Are you sure you want to delete this task?')) {
+                         await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/executive_tasks`, taskIdToDelete));
+                         // The onSnapshot listener will handle the UI update
+                    }
+                });
+            });
+
+            // If the modal is open, ensure it updates with the latest state
+            if (currentTaskId && tasks[currentTaskId]) {
+                const updatedTask = tasks[currentTaskId];
+                if (updatedTask.status === 'complete') {
+                    // If the task was completed while the modal was open (shouldn't happen with the complete btn)
+                    closeBtn.click();
+                } else {
+                    updateTimerState(updatedTask);
+                }
+            }
+        }
+
+        // --- FIRESTORE REAL-TIME LISTENER ---
+        function setupFirestoreListener() {
+            const taskRef = getCollectionRef();
+            if (!taskRef) {
+                console.error("Firestore not initialized yet (no userId).");
+                return;
+            }
+
+            // Listen for real-time updates
+            onSnapshot(taskRef, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    const taskId = change.doc.id;
+                    const data = change.doc.data();
+
+                    if (change.type === "added" || change.type === "modified") {
+                        tasks[taskId] = { ...data, id: taskId };
+                    } else if (change.type === "removed") {
+                        delete tasks[taskId];
+                        if (taskId === currentTaskId) {
+                            closeBtn.click(); // Close modal if the task was deleted
+                        }
+                    }
+                });
+                renderTasks(); // Re-render the entire list
+            }, (error) => {
+                console.error("Error listening to Firestore:", error);
+                loadingMessage.textContent = 'Error loading tasks.';
+            });
+        }
+
+        // --- NEW TASK SUBMISSION ---
+        document.getElementById('task-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!userId) {
+                alert('App is not ready. Please wait for user authentication.');
+                return;
+            }
+
+            const nameInput = document.getElementById('task-name');
+            const breakdownInput = document.getElementById('task-breakdown');
+
+            const newTask = {
+                name: nameInput.value.trim(),
+                breakdown: breakdownInput.value.trim(),
+                status: 'pending', // 'pending', 'active', 'complete'
+                duration: 0, // Time tracked in milliseconds
+                startTime: null, // Date.now() when started
+                createdAt: Date.now(),
+            };
+
+            try {
+                const collectionRef = getCollectionRef();
+                if (collectionRef) {
+                    await addDoc(collectionRef, newTask);
+                    // Clear the form only upon successful save
+                    nameInput.value = '';
+                    breakdownInput.value = '';
+                }
+            } catch (error) {
+                console.error("Error adding document: ", error);
+            }
+        });
+
+        // Initialize auth flow
+        authenticate();
+
+    </script>
+</body>
+</html>
