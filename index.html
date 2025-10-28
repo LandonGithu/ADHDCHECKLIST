@@ -7,12 +7,13 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, collection, query, setDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // --- Environment Variables (Automatically Provided) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        // Note: Added an explicit check for the environment variable existence before parsing
+        const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : {};
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
         let db;
@@ -36,39 +37,44 @@
             return collection(db, 'artifacts', appId, 'users', userId, collectionName);
         }
 
-        // --- Firebase Initialization and Authentication ---
+        // --- Firebase Initialization and Authentication (FIXED) ---
 
         async function initFirebase() {
             try {
+                // CRITICAL CHECK: Ensure the config is valid before proceeding
+                if (!firebaseConfig || Object.keys(firebaseConfig).length === 0 || !firebaseConfig.projectId) {
+                    document.getElementById('loading-state').textContent = 'Error: Missing critical Firebase configuration. Cannot initialize the database connection.';
+                    console.error("Initialization Failed: Firebase configuration is missing or empty.");
+                    return; // Stop execution if config is bad
+                }
+
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // 1. Set up the state listener first
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        console.log("Firebase Auth Ready. User ID:", userId);
-                        // Only load the data listeners once the user ID is confirmed
-                        loadData(); 
-                    } else {
-                        // This fallback handles cases where the initial sign-in attempt fails
-                        console.error("Auth state changed to null, loading as temporary user.");
-                        userId = crypto.randomUUID();
-                        loadData();
-                    }
-                });
-
-                // 2. Trigger the sign-in attempt
+                // Perform the required sign-in and await its completion.
+                // This replaces onAuthStateChanged to ensure a valid UID is set before loadData()
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
+                    console.log("Signed in with custom token.");
                 } else {
                     await signInAnonymously(auth);
+                    console.log("Signed in anonymously.");
+                }
+                
+                // After successful sign-in, auth.currentUser should be set.
+                if (auth.currentUser) {
+                    userId = auth.currentUser.uid;
+                    console.log("Firebase Auth Ready. User ID:", userId);
+                    loadData(); 
+                } else {
+                    // If sign-in still failed, show a clear authentication error
+                    throw new Error("Authentication failed: No user found after sign-in attempts.");
                 }
 
             } catch (error) {
                 console.error("Firebase initialization or authentication error:", error);
-                document.getElementById('loading-state').textContent = 'Error loading application: Check console for details.';
+                document.getElementById('loading-state').textContent = 'Error loading application: Authentication Failed. Check console for details.';
             }
         }
         
