@@ -3,473 +3,397 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Executive Function Tracker</title>
-    <!-- Tailwind CSS CDN -->
+    <title>My Executive Function Planner</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Custom styles for a clean, mobile-first design */
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f4f7f9;
-        }
-        /* Custom timer colors */
-        .timer-running {
-            background-color: #34D399; /* Green-400 */
-        }
-        .timer-paused {
-            background-color: #FBBF24; /* Amber-400 */
-        }
-        /* PWA Styling for App-like experience */
-        @media all and (display-mode: standalone) {
-            .pwa-message {
-                display: none !important;
-            }
-        }
-
-        /* Scrollbar styling for better feel */
-        .task-list::-webkit-scrollbar {
-            width: 8px;
-        }
-        .task-list::-webkit-scrollbar-thumb {
-            background-color: #D1D5DB; /* Gray-300 */
-            border-radius: 4px;
-        }
-        .task-list::-webkit-scrollbar-track {
-            background-color: #F3F4F6; /* Gray-100 */
-        }
-    </style>
-    <!-- PWA / Home Screen Meta Tags -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="https://placehold.co/180x180/10B981/ffffff?text=EF">
-</head>
-<body class="min-h-screen p-4 flex flex-col items-center">
-
-    <!-- Main Container -->
-    <div id="app-container" class="w-full max-w-md bg-white rounded-xl shadow-2xl p-6 transition-all duration-300">
-        <h1 class="text-3xl font-bold text-gray-800 mb-2">Executive Tracker</h1>
-        <p class="text-sm text-gray-500 mb-6">Plan, focus, and track your tasks with saved progress.</p>
-
-        <!-- PWA Instructions / User ID Display -->
-        <div id="status-area" class="text-xs text-center p-2 mb-4 rounded-lg bg-indigo-50 text-indigo-700">
-            <div id="user-id-display" class="font-mono truncate">Loading User...</div>
-            <p id="pwa-message" class="mt-1 font-semibold">
-                Use your browser's "Add to Home Screen" feature to run this like a native app!
-            </p>
-        </div>
-
-        <!-- New Task Form -->
-        <form id="task-form" class="flex flex-col gap-3 mb-6">
-            <input type="text" id="task-name" placeholder="What task needs attention?" required
-                   class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition duration-150">
-            <textarea id="task-breakdown" placeholder="Optional: Breakdown steps (1 per line) or goal."
-                      class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition duration-150 h-20 resize-none"></textarea>
-            <button type="submit"
-                    class="bg-indigo-600 text-white font-semibold py-3 rounded-xl hover:bg-indigo-700 transition duration-200 shadow-md">
-                Add Task
-            </button>
-        </form>
-
-        <!-- Task List Header -->
-        <h2 class="text-xl font-semibold text-gray-700 mb-3 border-b pb-2">Active Tasks</h2>
-
-        <!-- Task List -->
-        <div id="task-list" class="task-list space-y-3 max-h-96 overflow-y-auto">
-            <!-- Tasks will be injected here -->
-            <p id="loading-message" class="text-center text-gray-500 p-4">Awaiting task data...</p>
-        </div>
-    </div>
-
-    <!-- Hidden Modal for Task Details / Time Tracking -->
-    <div id="task-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 id="modal-task-name" class="text-xl font-bold text-gray-800 mb-3">Task Name</h3>
-
-            <!-- Timer Display -->
-            <div class="text-center mb-4">
-                <div id="modal-timer-display" class="text-5xl font-extrabold text-gray-800 p-4 rounded-lg transition-colors duration-300">
-                    00:00:00
-                </div>
-            </div>
-
-            <!-- Breakdown -->
-            <div class="mb-4">
-                <p class="font-semibold text-gray-700 mb-1">Breakdown/Goal:</p>
-                <p id="modal-task-breakdown" class="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg whitespace-pre-wrap"></p>
-            </div>
-
-            <!-- Timer Controls -->
-            <div class="flex gap-2 mb-4">
-                <button id="modal-start-pause-btn" class="flex-1 text-white py-2 rounded-lg font-semibold shadow-md transition-colors duration-200">
-                    Start
-                </button>
-                <button id="modal-reset-btn" class="bg-gray-400 hover:bg-gray-500 text-white py-2 px-4 rounded-lg font-semibold shadow-md transition-colors duration-200">
-                    Reset
-                </button>
-            </div>
-
-            <!-- Action Buttons -->
-            <div class="flex justify-between gap-3">
-                <button id="modal-complete-btn" class="flex-1 bg-green-500 text-white py-3 rounded-xl hover:bg-green-600 font-semibold shadow-lg transition-colors duration-200">
-                    Mark as Complete
-                </button>
-                <button id="modal-close-btn" class="w-1/4 bg-red-100 text-red-600 py-3 rounded-xl hover:bg-red-200 font-semibold transition-colors duration-200">
-                    Close
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, orderBy, addDoc, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, collection, query, setDoc, updateDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"; // Optional debug line
 
-        // --- GLOBAL FIREBASE VARIABLES (Provided by Canvas Environment) ---
+        // 🔑 MANDATORY: Use the variables provided by the Canvas environment 🔑
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { /* mock config if needed */ };
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        let db;
+        let auth;
+        let userId = 'loading'; // Will be updated after auth
+        
+        const HOMEWORK_COLLECTION = "homework";
+        const CHECKLIST_COLLECTION = "checklist";
+        const STRATEGIES_DOC = "strategies";
 
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-        setLogLevel('debug'); // Enable detailed Firebase logging
+        // --- Utility Functions for Firestore Path Management ---
 
-        let userId = null;
-        let currentTaskId = null;
-        let tasks = {};
-        let timerInterval = null;
+        function getUserDocRef(collectionName, docId) {
+            if (!userId || userId === 'loading') throw new Error("User ID is not set for Firestore operation.");
+            // Private data path: /artifacts/{appId}/users/{userId}/{collectionName}/{docId}
+            return doc(db, 'artifacts', appId, 'users', userId, collectionName, docId);
+        }
 
-        const taskList = document.getElementById('task-list');
-        const userIdDisplay = document.getElementById('user-id-display');
-        const loadingMessage = document.getElementById('loading-message');
+        function getUserCollectionRef(collectionName) {
+            if (!userId || userId === 'loading') throw new Error("User ID is not set for Firestore operation.");
+            // Private data path: /artifacts/{appId}/users/{userId}/{collectionName}
+            return collection(db, 'artifacts', appId, 'users', userId, collectionName);
+        }
 
-        // Modal Elements
-        const modal = document.getElementById('task-modal');
-        const modalTaskName = document.getElementById('modal-task-name');
-        const modalTaskBreakdown = document.getElementById('modal-task-breakdown');
-        const modalTimerDisplay = document.getElementById('modal-timer-display');
-        const startPauseBtn = document.getElementById('modal-start-pause-btn');
-        const resetBtn = document.getElementById('modal-reset-btn');
-        const completeBtn = document.getElementById('modal-complete-btn');
-        const closeBtn = document.getElementById('modal-close-btn');
+        // --- Firebase Initialization and Authentication ---
 
-        // --- AUTHENTICATION ---
-        async function authenticate() {
+        async function initFirebase() {
             try {
-                // Set persistence to keep user signed in
-                await setPersistence(auth, browserLocalPersistence);
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
 
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        console.log("Firebase Auth Ready. User ID:", userId);
+                        loadData(); // Start listening for data once auth is complete
+                    } else {
+                        // If no user, trigger the auth process
+                        handleAuth();
+                    }
+                });
+
+            } catch (error) {
+                console.error("Firebase initialization error:", error);
+                document.getElementById('loading-state').textContent = 'Error loading application: Check console for details.';
+            }
+        }
+        
+        async function handleAuth() {
+            try {
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
+                    // Fallback to anonymous sign-in if no token is provided
                     await signInAnonymously(auth);
                 }
             } catch (error) {
-                console.error("Firebase Auth Error:", error);
-                userIdDisplay.textContent = 'Auth Error!';
+                console.error("Firebase authentication error during sign-in:", error);
+                // If sign-in fails, default to an anonymous UUID to allow use, though persistence might be limited
+                userId = crypto.randomUUID();
+                loadData(); 
             }
         }
+        
+        // --- Data Loading and Real-time Listeners (Cont.) ---
+        
+        function loadData() {
+            document.getElementById('loading-state').style.display = 'none';
+            document.getElementById('app-container').style.display = 'block';
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                userId = user.uid;
-                userIdDisplay.textContent = `User ID: ${userId}`;
-                // Start listening to the database only after auth is ready
-                setupFirestoreListener();
-            } else {
-                // If onAuthStateChanged returns null, sign in anonymously or with custom token
-                if (!userId) {
-                    authenticate();
-                }
-            }
-        });
+            // 1. Listen to Homework
+            onSnapshot(getUserCollectionRef(HOMEWORK_COLLECTION), (snapshot) => {
+                const homeworks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderHomeworks(homeworks);
+            }, (error) => console.error("Error listening to homework:", error));
 
-        // --- FIRESTORE UTILITIES ---
-        function getCollectionRef() {
-            if (!userId) return null;
-            // Private data path for this specific app's executive tasks
-            return collection(db, `artifacts/${appId}/users/${userId}/executive_tasks`);
+            // 2. Listen to Checklist
+            onSnapshot(getUserCollectionRef(CHECKLIST_COLLECTION), (snapshot) => {
+                const checklistItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderChecklist(checklistItems);
+            }, (error) => console.error("Error listening to checklist:", error));
         }
 
-        // --- TIME UTILITIES ---
-        function formatTime(totalSeconds) {
-            const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
-            const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-            const s = String(totalSeconds % 60).padStart(2, '0');
-            return `${h}:${m}:${s}`;
-        }
+        // --- Behavior Strategies (Static Content) ---
 
-        function updateTimerDisplay(duration) {
-            modalTimerDisplay.textContent = formatTime(Math.round(duration / 1000));
-        }
+        const strategies = [
+            { id: 1, title: "Wegovy/Medical Accommodation", description: "Use the doctor-approved 'Medical Pass' (or non-verbal signal) for immediate, discreet access to the water fountain or restroom. This is a reasonable modification, not a disciplinary issue.", tags: ["Medical", "ADA"] },
+            { id: 2, title: "ODD/Authority Compliance (The Reset)", description: "When frustrated by an authority request, use the pre-arranged coping technique (e.g., counting to 5, deep breath) and ask for a 1-minute 'reset break' before complying. Focus on the task, not the tone.", tags: ["ODD", "BIP"] },
+            { id: 3, title: "Severe ADHD/Impulse Control", description: "If you want to call out or disrupt, stop, pick up your assigned fidget item, or write your thought on a mini notepad. Use the LRC break/sensory tool *before* the impulse becomes disruptive.", tags: ["ADHD", "Sensory"] },
+            { id: 4, title: "OCD/Checking (The Time Limit)", description: "For routines (e.g., locking locker, checking backpack), assign a fixed time limit (e.g., 30 seconds). Use a timer if necessary. Once the timer is up, you are done, and you must move on.", tags: ["OCD", "Time Management"] }
+        ];
 
-        function updateTimerState(task) {
-            clearInterval(timerInterval);
-            let duration = task.duration || 0;
-            const status = task.status;
-
-            if (status === 'active') {
-                modalTimerDisplay.classList.remove('timer-paused', 'bg-gray-100');
-                modalTimerDisplay.classList.add('timer-running');
-                startPauseBtn.textContent = 'Pause';
-                startPauseBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
-                startPauseBtn.classList.add('bg-orange-500', 'hover:bg-orange-600');
-
-                // Start or resume counting
-                const elapsedSinceStart = Date.now() - task.startTime;
-                duration += elapsedSinceStart;
-                updateTimerDisplay(duration);
-
-                timerInterval = setInterval(() => {
-                    duration += 1000;
-                    updateTimerDisplay(duration);
-                }, 1000);
-
-            } else {
-                // Paused or Pending
-                modalTimerDisplay.classList.remove('timer-running');
-                modalTimerDisplay.classList.add('timer-paused', 'bg-gray-100');
-                startPauseBtn.textContent = 'Start';
-                startPauseBtn.classList.remove('bg-orange-500', 'hover:bg-orange-600');
-                startPauseBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
-                updateTimerDisplay(duration);
-            }
-        }
-
-        // --- MODAL HANDLERS ---
-        function openModal(taskId) {
-            currentTaskId = taskId;
-            const task = tasks[taskId];
-            if (!task) return;
-
-            modalTaskName.textContent = task.name;
-            modalTaskBreakdown.textContent = task.breakdown || 'No breakdown provided.';
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
-            updateTimerState(task);
-        }
-
-        closeBtn.addEventListener('click', () => {
-            modal.classList.remove('flex');
-            modal.classList.add('hidden');
-            clearInterval(timerInterval);
-            currentTaskId = null;
-        });
-
-        startPauseBtn.addEventListener('click', async () => {
-            if (!currentTaskId) return;
-
-            const task = tasks[currentTaskId];
-            if (!task) return;
-
-            const taskRef = doc(db, `artifacts/${appId}/users/${userId}/executive_tasks`, currentTaskId);
-
-            if (task.status === 'active') {
-                // Pause: update duration, set status to pending, clear startTime
-                const newDuration = (task.duration || 0) + (Date.now() - task.startTime);
-                await updateDoc(taskRef, {
-                    status: 'pending',
-                    duration: newDuration,
-                    startTime: null,
-                });
-            } else {
-                // Start: set status to active, set new startTime
-                await updateDoc(taskRef, {
-                    status: 'active',
-                    startTime: Date.now(),
-                });
-            }
-        });
-
-        resetBtn.addEventListener('click', async () => {
-            if (!currentTaskId) return;
-            const taskRef = doc(db, `artifacts/${appId}/users/${userId}/executive_tasks`, currentTaskId);
-
-            await updateDoc(taskRef, {
-                status: 'pending',
-                duration: 0,
-                startTime: null,
-            });
-        });
-
-        completeBtn.addEventListener('click', async () => {
-            if (!currentTaskId) return;
-
-            // Pause and clear timer
-            clearInterval(timerInterval);
-
-            // Calculate final duration
-            const task = tasks[currentTaskId];
-            let finalDuration = task.duration || 0;
-            if (task.status === 'active') {
-                finalDuration += (Date.now() - task.startTime);
-            }
-
-            const taskRef = doc(db, `artifacts/${appId}/users/${userId}/executive_tasks`, currentTaskId);
-
-            await updateDoc(taskRef, {
-                status: 'complete',
-                duration: finalDuration,
-                startTime: null,
-            });
-
-            // Close the modal
-            closeBtn.click();
-        });
-
-
-        // --- TASK RENDERING & UI ---
-        function renderTasks() {
-            // Sort tasks: Active first, then pending, then completed
-            const sortedTasks = Object.keys(tasks)
-                .map(id => ({ id, ...tasks[id] }))
-                .sort((a, b) => {
-                    const statusOrder = { 'active': 0, 'pending': 1, 'complete': 2 };
-                    if (statusOrder[a.status] !== statusOrder[b.status]) {
-                        return statusOrder[a.status] - statusOrder[b.status];
-                    }
-                    // Secondary sort by creation time
-                    return a.createdAt - b.createdAt;
-                });
-
-            taskList.innerHTML = '';
-            loadingMessage.classList.add('hidden'); // Hide loading message once data arrives
-
-            if (sortedTasks.length === 0) {
-                 taskList.innerHTML = '<p class="text-center text-gray-400 p-4">No tasks yet. Add one above to get started!</p>';
-                 return;
-            }
-
-            sortedTasks.forEach(task => {
-                const isComplete = task.status === 'complete';
-                const isRunning = task.status === 'active';
-                const totalSeconds = Math.round((task.duration || 0) / 1000) + (isRunning ? Math.round((Date.now() - task.startTime) / 1000) : 0);
-
-                const taskElement = document.createElement('div');
-                taskElement.className = `task-card p-4 rounded-xl shadow-lg flex justify-between items-center transition-all duration-300 ${isComplete ? 'bg-green-50' : isRunning ? 'bg-indigo-100' : 'bg-white hover:bg-gray-50'} border-l-4 ${isComplete ? 'border-green-500' : isRunning ? 'border-indigo-500' : 'border-gray-200'}`;
-
-                taskElement.innerHTML = `
-                    <div class="flex-1 min-w-0">
-                        <p class="text-lg font-semibold truncate ${isComplete ? 'line-through text-gray-500' : 'text-gray-800'}">${task.name}</p>
-                        <p class="text-sm text-gray-500 mt-1">
-                            ${isRunning ? '🕒 Active' : isComplete ? '✅ Complete' : '⏸️ Pending'} | 
-                            Time: <span class="font-mono">${formatTime(totalSeconds)}</span>
-                        </p>
+        function renderStrategies() {
+            const container = document.getElementById('strategies-list');
+            container.innerHTML = strategies.map(s => `
+                <div class="bg-indigo-100 p-4 rounded-lg shadow-md mb-3 border-l-4 border-indigo-600">
+                    <h3 class="font-bold text-lg text-indigo-800 flex items-center mb-1">
+                        <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            ${s.title.includes('Medical') ? '<path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" />' : ''}
+                            ${s.title.includes('ODD') ? '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />' : ''}
+                            ${s.title.includes('ADHD') ? '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 00-2 0v2a1 1 0 102 0V7zm-1 7a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />' : ''}
+                            ${s.title.includes('OCD') ? '<path d="M10 2a8 8 0 100 16 8 8 0 000-16zM8 9a1 1 0 00-1 1v4a1 1 0 102 0v-4a1 1 0 00-1-1zm4 1a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1z" />' : ''}
+                        </svg>
+                        ${s.title}
+                    </h3>
+                    <p class="text-sm text-gray-700">${s.description}</p>
+                    <div class="mt-2 text-xs">
+                        ${s.tags.map(tag => `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-200 text-indigo-800 mr-1">${tag}</span>`).join('')}
                     </div>
-                    <div class="flex gap-2 ml-4">
-                        <button data-id="${task.id}" class="open-modal-btn bg-indigo-500 text-white p-2 rounded-full shadow-md hover:bg-indigo-600 transition-colors duration-200" title="View/Edit">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                              <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                              <path fill-rule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clip-rule="evenodd" />
-                            </svg>
-                        </button>
-                        <button data-id="${task.id}" class="delete-task-btn bg-red-400 text-white p-2 rounded-full shadow-md hover:bg-red-500 transition-colors duration-200" title="Delete">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                              <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                            </svg>
-                        </button>
-                    </div>
-                `;
-
-                taskList.appendChild(taskElement);
-            });
-
-            // Re-attach event listeners after rendering
-            document.querySelectorAll('.open-modal-btn').forEach(button => {
-                button.addEventListener('click', (e) => openModal(e.currentTarget.dataset.id));
-            });
-
-            document.querySelectorAll('.delete-task-btn').forEach(button => {
-                button.addEventListener('click', async (e) => {
-                    const taskIdToDelete = e.currentTarget.dataset.id;
-                    if (confirm('Are you sure you want to delete this task?')) {
-                         await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/executive_tasks`, taskIdToDelete));
-                         // The onSnapshot listener will handle the UI update
-                    }
-                });
-            });
-
-            // If the modal is open, ensure it updates with the latest state
-            if (currentTaskId && tasks[currentTaskId]) {
-                const updatedTask = tasks[currentTaskId];
-                if (updatedTask.status === 'complete') {
-                    // If the task was completed while the modal was open (shouldn't happen with the complete btn)
-                    closeBtn.click();
-                } else {
-                    updateTimerState(updatedTask);
-                }
-            }
+                </div>
+            `).join('');
         }
+        
+        // --- Homework Planner Functions ---
 
-        // --- FIRESTORE REAL-TIME LISTENER ---
-        function setupFirestoreListener() {
-            const taskRef = getCollectionRef();
-            if (!taskRef) {
-                console.error("Firestore not initialized yet (no userId).");
+        async function addHomework() {
+            const taskEl = document.getElementById('homework-task');
+            const dateEl = document.getElementById('homework-due-date');
+            const strategyEl = document.getElementById('homework-strategy');
+
+            const task = taskEl.value.trim();
+            const dueDate = dateEl.value;
+            const strategy = strategyEl.value.trim();
+
+            if (!task || !dueDate) {
+                // No alert() - show error in console
+                console.error('Please enter a task and a due date.');
                 return;
             }
 
-            // Listen for real-time updates
-            onSnapshot(taskRef, (snapshot) => {
-                snapshot.docChanges().forEach((change) => {
-                    const taskId = change.doc.id;
-                    const data = change.doc.data();
-
-                    if (change.type === "added" || change.type === "modified") {
-                        tasks[taskId] = { ...data, id: taskId };
-                    } else if (change.type === "removed") {
-                        delete tasks[taskId];
-                        if (taskId === currentTaskId) {
-                            closeBtn.click(); // Close modal if the task was deleted
-                        }
-                    }
-                });
-                renderTasks(); // Re-render the entire list
-            }, (error) => {
-                console.error("Error listening to Firestore:", error);
-                loadingMessage.textContent = 'Error loading tasks.';
-            });
-        }
-
-        // --- NEW TASK SUBMISSION ---
-        document.getElementById('task-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            if (!userId) {
-                alert('App is not ready. Please wait for user authentication.');
-                return;
-            }
-
-            const nameInput = document.getElementById('task-name');
-            const breakdownInput = document.getElementById('task-breakdown');
-
-            const newTask = {
-                name: nameInput.value.trim(),
-                breakdown: breakdownInput.value.trim(),
-                status: 'pending', // 'pending', 'active', 'complete'
-                duration: 0, // Time tracked in milliseconds
-                startTime: null, // Date.now() when started
-                createdAt: Date.now(),
+            const newHomework = {
+                task: task,
+                dueDate: dueDate,
+                strategy: strategy || 'None Specified',
+                completed: false,
+                createdAt: new Date().toISOString()
             };
 
             try {
-                const collectionRef = getCollectionRef();
-                if (collectionRef) {
-                    await addDoc(collectionRef, newTask);
-                    // Clear the form only upon successful save
-                    nameInput.value = '';
-                    breakdownInput.value = '';
-                }
-            } catch (error) {
-                console.error("Error adding document: ", error);
+                // Use a standard Firestore setDoc with a generated ID
+                const newDocRef = doc(getUserCollectionRef(HOMEWORK_COLLECTION));
+                await setDoc(newDocRef, newHomework);
+                
+                taskEl.value = '';
+                dateEl.value = '';
+                strategyEl.value = '';
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                // No alert()
             }
-        });
+        }
 
-        // Initialize auth flow
-        authenticate();
+        async function toggleHomework(id, currentStatus) {
+            try {
+                const docRef = getUserDocRef(HOMEWORK_COLLECTION, id);
+                await updateDoc(docRef, {
+                    completed: !currentStatus
+                });
+            } catch (e) {
+                console.error("Error toggling homework:", e);
+                // No alert()
+            }
+        }
 
+        async function deleteHomework(id) {
+            // Note: Since we cannot use confirm(), we log the attempt and delete directly for simplicity on a web page,
+            // or you would implement a visual modal.
+            console.log(`Attempting to delete homework item: ${id}`);
+            try {
+                const docRef = getUserDocRef(HOMEWORK_COLLECTION, id);
+                await deleteDoc(docRef);
+            } catch (e) {
+                console.error("Error deleting homework:", e);
+                // No alert()
+            }
+        }
+
+        function renderHomeworks(homeworks) {
+            const container = document.getElementById('homework-list');
+            
+            // Sort: Incomplete first, then by Due Date
+            const sortedHomeworks = homeworks.sort((a, b) => {
+                if (a.completed !== b.completed) {
+                    return a.completed ? 1 : -1;
+                }
+                return new Date(a.dueDate) - new Date(b.dueDate);
+            });
+
+            container.innerHTML = sortedHomeworks.map(h => {
+                const isOverdue = !h.completed && new Date(h.dueDate) < new Date(new Date().setHours(0, 0, 0, 0));
+                
+                return `
+                    <div class="p-3 mb-2 rounded-lg flex items-start space-x-3 transition-all duration-200 ${h.completed ? 'bg-green-50' : (isOverdue ? 'bg-red-100 border-l-4 border-red-500' : 'bg-white shadow-sm')}">
+                        <input type="checkbox" ${h.completed ? 'checked' : ''} 
+                                onclick="toggleHomework('${h.id}', ${h.completed})"
+                                class="mt-2 h-5 w-5 rounded text-indigo-600 border-gray-300 focus:ring-indigo-500">
+                        <div class="flex-grow">
+                            <p class="font-semibold text-gray-900 ${h.completed ? 'line-through text-gray-500' : 'text-indigo-800'}">
+                                ${h.task}
+                            </p>
+                            <p class="text-xs ${isOverdue ? 'text-red-700 font-bold' : 'text-gray-500'}">
+                                Due: ${h.dueDate} 
+                                ${isOverdue ? '<span class="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-500 text-white">OVERDUE</span>' : ''}
+                            </p>
+                            <p class="text-sm mt-1 text-gray-600 italic">
+                                Strategy: ${h.strategy}
+                            </p>
+                        </div>
+                        <button onclick="deleteHomework('${h.id}')" class="text-gray-400 hover:text-red-600 transition duration-150 p-1 rounded-full">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
+                `;
+            }).join('') || '<p class="text-center text-gray-500 p-4">You are all caught up! Add a new assignment above.</p>';
+        }
+
+        // --- Daily Checklist Functions ---
+
+        async function addChecklistItem() {
+            const itemEl = document.getElementById('checklist-item');
+            const item = itemEl.value.trim();
+
+            if (!item) return;
+
+            const newItem = {
+                item: item,
+                completed: false,
+                createdAt: new Date().toISOString()
+            };
+
+            try {
+                const newDocRef = doc(getUserCollectionRef(CHECKLIST_COLLECTION));
+                await setDoc(newDocRef, newItem);
+                itemEl.value = '';
+            } catch (e) {
+                console.error("Error adding checklist item: ", e);
+                // No alert()
+            }
+        }
+
+        async function toggleChecklistItem(id, currentStatus) {
+            try {
+                const docRef = getUserDocRef(CHECKLIST_COLLECTION, id);
+                await updateDoc(docRef, {
+                    completed: !currentStatus
+                });
+            } catch (e) {
+                console.error("Error toggling checklist item:", e);
+                // No alert()
+            }
+        }
+
+        async function deleteChecklistItem(id) {
+            try {
+                const docRef = getUserDocRef(CHECKLIST_COLLECTION, id);
+                await deleteDoc(docRef);
+            } catch (e) {
+                console.error("Error deleting checklist item:", e);
+                // No alert()
+            }
+        }
+
+        function renderChecklist(items) {
+            const container = document.getElementById('checklist-area');
+            
+            // Sort: Incomplete first
+            const sortedItems = items.sort((a, b) => a.completed - b.completed || new Date(a.createdAt) - new Date(b.createdAt));
+
+            container.innerHTML = sortedItems.map(item => `
+                <div class="flex items-center justify-between p-3 border-b border-gray-100 last:border-b-0 ${item.completed ? 'bg-gray-50' : 'bg-white'}">
+                    <div class="flex items-center flex-grow">
+                        <input type="checkbox" ${item.completed ? 'checked' : ''} 
+                                onclick="toggleChecklistItem('${item.id}', ${item.completed})"
+                                class="h-4 w-4 rounded text-teal-600 border-gray-300 focus:ring-teal-500 mr-3">
+                        <span class="${item.completed ? 'line-through text-gray-500' : 'text-gray-800'}">
+                            ${item.item}
+                        </span>
+                    </div>
+                    <button onclick="deleteChecklistItem('${item.id}')" class="text-gray-400 hover:text-red-500 transition duration-150 p-1 rounded-full">
+                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+            `).join('') || '<p class="text-center text-gray-500 p-4">Add your daily tasks above.</p>';
+        }
+
+
+        // --- Global Setup ---
+
+        window.onload = function() {
+            renderStrategies();
+            initFirebase();
+            
+            // Expose Firestore functions globally for use in HTML
+            window.addHomework = addHomework;
+            window.toggleHomework = toggleHomework;
+            window.deleteHomework = deleteHomework;
+            window.addChecklistItem = addChecklistItem;
+            window.toggleChecklistItem = toggleChecklistItem;
+            window.deleteChecklistItem = deleteChecklistItem;
+        };
     </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f6f8;
+        }
+        .container-shadow {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div id="loading-state" class="text-center p-8 text-xl font-semibold text-indigo-700">
+        Loading Planner... Please wait for authentication.
+    </div>
+
+    <div id="app-container" class="max-w-4xl mx-auto space-y-8" style="display: none;">
+
+        <!-- Header -->
+        <header class="text-center p-6 bg-white rounded-xl container-shadow">
+            <h1 class="text-3xl font-extrabold text-indigo-800 tracking-tight">Executive Function Toolkit</h1>
+            <p class="text-md text-gray-600 mt-2">Managing ADHD, ODD, and OCD with intention and structure.</p>
+        </header>
+
+        <!-- 1. Behavior Strategies List -->
+        <section class="p-6 bg-white rounded-xl container-shadow">
+            <h2 class="text-2xl font-bold text-indigo-700 mb-4 border-b pb-2">My Accommodation & Intervention Strategies</h2>
+            <p class="text-sm text-gray-600 mb-4">Use these specific techniques *before* a situation escalates. These are your legally supported tools.</p>
+            <div id="strategies-list" class="space-y-3">
+                <!-- Strategies will be rendered here by JS -->
+            </div>
+        </section>
+        
+        <!-- 2. Daily/Routine Checklist -->
+        <section class="p-6 bg-white rounded-xl container-shadow">
+            <h2 class="text-2xl font-bold text-teal-700 mb-4 border-b pb-2">Daily / Habit Checklist</h2>
+            
+            <!-- Input Form for Checklist -->
+            <div class="flex mb-4">
+                <input type="text" id="checklist-item" placeholder="e.g., Take medication, Pack gym bag, Check Planner"
+                       class="flex-grow p-3 border border-gray-300 rounded-l-lg focus:ring-teal-500 focus:border-teal-500">
+                <button onclick="addChecklistItem()" class="bg-teal-600 text-white p-3 rounded-r-lg hover:bg-teal-700 transition duration-150 font-semibold">
+                    Add Task
+                </button>
+            </div>
+
+            <!-- Checklist Area -->
+            <div id="checklist-area" class="border border-gray-200 rounded-lg overflow-hidden">
+                <!-- Checklist items will be rendered here by JS -->
+            </div>
+        </section>
+
+        <!-- 3. Homework Planner -->
+        <section class="p-6 bg-white rounded-xl container-shadow">
+            <h2 class="text-2xl font-bold text-blue-700 mb-4 border-b pb-2">Homework & Assignment Planner</h2>
+
+            <!-- Input Form for Homework -->
+            <div class="space-y-3 mb-6 p-4 border border-blue-200 rounded-lg bg-blue-50">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input type="text" id="homework-task" placeholder="Assignment Name (e.g., History Essay Draft)"
+                           class="p-3 border border-blue-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                    <input type="date" id="homework-due-date" title="Due Date"
+                           class="p-3 border border-blue-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <input type="text" id="homework-strategy" placeholder="Strategy to use (e.g., Pomodoro Method, Use my Fidget, Break into 3 steps)"
+                       class="w-full p-3 border border-blue-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                <button onclick="addHomework()" class="w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 transition duration-150 font-bold tracking-wider">
+                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Add Assignment
+                </button>
+            </div>
+
+            <!-- Homework List -->
+            <div id="homework-list" class="space-y-2">
+                <!-- Homework items will be rendered here by JS -->
+            </div>
+        </section>
+
+    </div>
 </body>
 </html>
