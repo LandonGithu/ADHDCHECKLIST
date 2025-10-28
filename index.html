@@ -8,21 +8,19 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, onSnapshot, collection, query, setDoc, updateDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        // import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"; // Optional debug line
-
-        // 🔑 MANDATORY: Use the variables provided by the Canvas environment 🔑
+        import { getFirestore, doc, onSnapshot, collection, query, setDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- Environment Variables (Automatically Provided) ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
         let db;
         let auth;
-        let userId = 'loading'; // Will be updated after auth
+        let userId = 'loading'; // State placeholder until auth completes
         
         const HOMEWORK_COLLECTION = "homework";
         const CHECKLIST_COLLECTION = "checklist";
-        const STRATEGIES_DOC = "strategies";
 
         // --- Utility Functions for Firestore Path Management ---
 
@@ -46,42 +44,38 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
+                // 1. Set up the state listener first
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
                         console.log("Firebase Auth Ready. User ID:", userId);
-                        loadData(); // Start listening for data once auth is complete
+                        // Only load the data listeners once the user ID is confirmed
+                        loadData(); 
                     } else {
-                        // If no user, trigger the auth process
-                        handleAuth();
+                        // This fallback handles cases where the initial sign-in attempt fails
+                        console.error("Auth state changed to null, loading as temporary user.");
+                        userId = crypto.randomUUID();
+                        loadData();
                     }
                 });
 
+                // 2. Trigger the sign-in attempt
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
             } catch (error) {
-                console.error("Firebase initialization error:", error);
+                console.error("Firebase initialization or authentication error:", error);
                 document.getElementById('loading-state').textContent = 'Error loading application: Check console for details.';
             }
         }
         
-        async function handleAuth() {
-            try {
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    // Fallback to anonymous sign-in if no token is provided
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Firebase authentication error during sign-in:", error);
-                // If sign-in fails, default to an anonymous UUID to allow use, though persistence might be limited
-                userId = crypto.randomUUID();
-                loadData(); 
-            }
-        }
-        
-        // --- Data Loading and Real-time Listeners (Cont.) ---
+        // --- Data Loading and Real-time Listeners ---
         
         function loadData() {
+            // Hide the loading state and show the main app only after successful auth
             document.getElementById('loading-state').style.display = 'none';
             document.getElementById('app-container').style.display = 'block';
 
@@ -128,7 +122,7 @@
             `).join('');
         }
         
-        // --- Homework Planner Functions ---
+        // --- Homework Planner Functions (Unchanged) ---
 
         async function addHomework() {
             const taskEl = document.getElementById('homework-task');
@@ -140,7 +134,6 @@
             const strategy = strategyEl.value.trim();
 
             if (!task || !dueDate) {
-                // No alert() - show error in console
                 console.error('Please enter a task and a due date.');
                 return;
             }
@@ -154,7 +147,6 @@
             };
 
             try {
-                // Use a standard Firestore setDoc with a generated ID
                 const newDocRef = doc(getUserCollectionRef(HOMEWORK_COLLECTION));
                 await setDoc(newDocRef, newHomework);
                 
@@ -163,32 +155,25 @@
                 strategyEl.value = '';
             } catch (e) {
                 console.error("Error adding document: ", e);
-                // No alert()
             }
         }
 
         async function toggleHomework(id, currentStatus) {
             try {
                 const docRef = getUserDocRef(HOMEWORK_COLLECTION, id);
-                await updateDoc(docRef, {
-                    completed: !currentStatus
-                });
+                await updateDoc(docRef, { completed: !currentStatus });
             } catch (e) {
                 console.error("Error toggling homework:", e);
-                // No alert()
             }
         }
 
         async function deleteHomework(id) {
-            // Note: Since we cannot use confirm(), we log the attempt and delete directly for simplicity on a web page,
-            // or you would implement a visual modal.
             console.log(`Attempting to delete homework item: ${id}`);
             try {
                 const docRef = getUserDocRef(HOMEWORK_COLLECTION, id);
                 await deleteDoc(docRef);
             } catch (e) {
                 console.error("Error deleting homework:", e);
-                // No alert()
             }
         }
 
@@ -231,7 +216,7 @@
             }).join('') || '<p class="text-center text-gray-500 p-4">You are all caught up! Add a new assignment above.</p>';
         }
 
-        // --- Daily Checklist Functions ---
+        // --- Daily Checklist Functions (Unchanged) ---
 
         async function addChecklistItem() {
             const itemEl = document.getElementById('checklist-item');
@@ -251,19 +236,15 @@
                 itemEl.value = '';
             } catch (e) {
                 console.error("Error adding checklist item: ", e);
-                // No alert()
             }
         }
 
         async function toggleChecklistItem(id, currentStatus) {
             try {
                 const docRef = getUserDocRef(CHECKLIST_COLLECTION, id);
-                await updateDoc(docRef, {
-                    completed: !currentStatus
-                });
+                await updateDoc(docRef, { completed: !currentStatus });
             } catch (e) {
                 console.error("Error toggling checklist item:", e);
-                // No alert()
             }
         }
 
@@ -273,7 +254,6 @@
                 await deleteDoc(docRef);
             } catch (e) {
                 console.error("Error deleting checklist item:", e);
-                // No alert()
             }
         }
 
@@ -304,10 +284,13 @@
         // --- Global Setup ---
 
         window.onload = function() {
+            // Render static content immediately on load
             renderStrategies();
+            
+            // Start the Firebase initialization and authentication process
             initFirebase();
             
-            // Expose Firestore functions globally for use in HTML
+            // Expose Firestore functions globally for use in HTML buttons
             window.addHomework = addHomework;
             window.toggleHomework = toggleHomework;
             window.deleteHomework = deleteHomework;
