@@ -7,18 +7,36 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, collection, query, setDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // --- Environment Variables (Automatically Provided) ---
+        // NOTE: The Tailwind CDN warning is non-critical. For production, install Tailwind locally.
+
+        // --- Environment Variables & Placeholder Config ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        // Note: Added an explicit check for the environment variable existence before parsing
-        const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config ? JSON.parse(__firebase_config) : {};
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
+        let configToUse;
+        
+        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+            // Case 1: Running in Canvas environment
+            configToUse = JSON.parse(__firebase_config);
+        } else {
+            // Case 2: Running externally (GitHub Pages, local host, etc.)
+            // CRITICAL: YOUR FIREBASE PROJECT CREDENTIALS ARE NOW CONFIGURED BELOW
+            configToUse = {
+                apiKey: "AIzaSyDilz08B6NYOxhUi_mlTkjIEx85y4pvUjk", 
+                authDomain: "projecg-16d58.firebaseapp.com",
+                projectId: "projecg-16d58", 
+                storageBucket: "projecg-16d58.firebasestorage.app",
+                messagingSenderId: "841704057365",
+                appId: "1:841704057365:web:6523066cf0303626dcfc1c"
+            };
+            console.log("Using user-provided Firebase configuration.");
+        }
+
         let db;
         let auth;
-        let userId = 'loading'; // State placeholder until auth completes
+        let userId = 'loading'; 
         
         const HOMEWORK_COLLECTION = "homework";
         const CHECKLIST_COLLECTION = "checklist";
@@ -27,61 +45,72 @@
 
         function getUserDocRef(collectionName, docId) {
             if (!userId || userId === 'loading') throw new Error("User ID is not set for Firestore operation.");
-            // Private data path: /artifacts/{appId}/users/{userId}/{collectionName}/{docId}
             return doc(db, 'artifacts', appId, 'users', userId, collectionName, docId);
         }
 
         function getUserCollectionRef(collectionName) {
             if (!userId || userId === 'loading') throw new Error("User ID is not set for Firestore operation.");
-            // Private data path: /artifacts/{appId}/users/{userId}/{collectionName}
             return collection(db, 'artifacts', appId, 'users', userId, collectionName);
         }
 
-        // --- Firebase Initialization and Authentication (FIXED) ---
+        // Simple non-blocking message display
+        function showUIMessage(message, isError = false) {
+            const container = document.getElementById('message-container');
+            if (container) {
+                container.textContent = message;
+                container.className = `p-3 rounded-lg text-center font-semibold mb-4 ${isError ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800'}`;
+                container.style.display = 'block';
+                setTimeout(() => {
+                    container.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        // --- Firebase Initialization and Authentication ---
 
         async function initFirebase() {
             try {
-                // CRITICAL CHECK: Ensure the config is valid before proceeding
-                if (!firebaseConfig || Object.keys(firebaseConfig).length === 0 || !firebaseConfig.projectId) {
-                    document.getElementById('loading-state').textContent = 'Error: Missing critical Firebase configuration. Cannot initialize the database connection.';
-                    console.error("Initialization Failed: Firebase configuration is missing or empty.");
-                    return; // Stop execution if config is bad
-                }
-
-                const app = initializeApp(firebaseConfig);
+                // Initialize Firebase App
+                const app = initializeApp(configToUse);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Perform the required sign-in and await its completion.
-                // This replaces onAuthStateChanged to ensure a valid UID is set before loadData()
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                    console.log("Signed in with custom token.");
-                } else {
-                    await signInAnonymously(auth);
-                    console.log("Signed in anonymously.");
-                }
-                
-                // After successful sign-in, auth.currentUser should be set.
-                if (auth.currentUser) {
-                    userId = auth.currentUser.uid;
-                    console.log("Firebase Auth Ready. User ID:", userId);
-                    loadData(); 
-                } else {
-                    // If sign-in still failed, show a clear authentication error
-                    throw new Error("Authentication failed: No user found after sign-in attempts.");
-                }
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        console.log("Firebase Auth Ready. User ID:", userId);
+                        loadData(); // Start listening for data once auth is complete
+                    } else {
+                        handleAuth(); // Attempt sign-in if not authenticated
+                    }
+                });
 
             } catch (error) {
-                console.error("Firebase initialization or authentication error:", error);
-                document.getElementById('loading-state').textContent = 'Error loading application: Authentication Failed. Check console for details.';
+                console.error("Firebase initialization error:", error);
+                document.getElementById('loading-state').textContent = 'Error loading application: Authentication or network failure. Check console for details.';
             }
         }
-        
+
+        async function handleAuth() {
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Firebase authentication error:", error);
+                // Fallback: If sign-in fails, use a random ID to allow local CRUD operations 
+                // but warn the user that persistence/sharing may be affected.
+                userId = crypto.randomUUID();
+                console.warn("Authentication fallback: Using random UUID for user ID. Persistence may be limited.");
+                loadData(); 
+            }
+        }
+
         // --- Data Loading and Real-time Listeners ---
-        
+
         function loadData() {
-            // Hide the loading state and show the main app only after successful auth
             document.getElementById('loading-state').style.display = 'none';
             document.getElementById('app-container').style.display = 'block';
 
@@ -128,7 +157,7 @@
             `).join('');
         }
         
-        // --- Homework Planner Functions (Unchanged) ---
+        // --- Homework Planner Functions ---
 
         async function addHomework() {
             const taskEl = document.getElementById('homework-task');
@@ -140,7 +169,8 @@
             const strategy = strategyEl.value.trim();
 
             if (!task || !dueDate) {
-                console.error('Please enter a task and a due date.');
+                showUIMessage('Please enter both a task and a due date.', true);
+                console.error('Validation failed: Please enter a task and a due date.');
                 return;
             }
 
@@ -159,8 +189,10 @@
                 taskEl.value = '';
                 dateEl.value = '';
                 strategyEl.value = '';
+                showUIMessage('Assignment added successfully!');
             } catch (e) {
                 console.error("Error adding document: ", e);
+                showUIMessage("Failed to save assignment. Check console.", true);
             }
         }
 
@@ -170,16 +202,19 @@
                 await updateDoc(docRef, { completed: !currentStatus });
             } catch (e) {
                 console.error("Error toggling homework:", e);
+                showUIMessage("Failed to update status. Check console.", true);
             }
         }
 
         async function deleteHomework(id) {
-            console.log(`Attempting to delete homework item: ${id}`);
+            // Note: Removed the blocking confirm() dialog as per instructions. Deletion is now immediate.
             try {
                 const docRef = getUserDocRef(HOMEWORK_COLLECTION, id);
                 await deleteDoc(docRef);
+                showUIMessage('Assignment deleted.');
             } catch (e) {
                 console.error("Error deleting homework:", e);
+                showUIMessage("Failed to delete item. Check console.", true);
             }
         }
 
@@ -222,7 +257,7 @@
             }).join('') || '<p class="text-center text-gray-500 p-4">You are all caught up! Add a new assignment above.</p>';
         }
 
-        // --- Daily Checklist Functions (Unchanged) ---
+        // --- Daily Checklist Functions ---
 
         async function addChecklistItem() {
             const itemEl = document.getElementById('checklist-item');
@@ -240,8 +275,10 @@
                 const newDocRef = doc(getUserCollectionRef(CHECKLIST_COLLECTION));
                 await setDoc(newDocRef, newItem);
                 itemEl.value = '';
+                showUIMessage('Checklist item added!');
             } catch (e) {
                 console.error("Error adding checklist item: ", e);
+                showUIMessage("Failed to save checklist item. Check console.", true);
             }
         }
 
@@ -251,6 +288,7 @@
                 await updateDoc(docRef, { completed: !currentStatus });
             } catch (e) {
                 console.error("Error toggling checklist item:", e);
+                showUIMessage("Failed to update checklist status. Check console.", true);
             }
         }
 
@@ -258,8 +296,10 @@
             try {
                 const docRef = getUserDocRef(CHECKLIST_COLLECTION, id);
                 await deleteDoc(docRef);
+                showUIMessage('Checklist item deleted.');
             } catch (e) {
                 console.error("Error deleting checklist item:", e);
+                showUIMessage("Failed to delete item. Check console.", true);
             }
         }
 
@@ -290,13 +330,10 @@
         // --- Global Setup ---
 
         window.onload = function() {
-            // Render static content immediately on load
             renderStrategies();
-            
-            // Start the Firebase initialization and authentication process
             initFirebase();
             
-            // Expose Firestore functions globally for use in HTML buttons
+            // Expose Firestore functions globally for use in HTML
             window.addHomework = addHomework;
             window.toggleHomework = toggleHomework;
             window.deleteHomework = deleteHomework;
@@ -322,6 +359,9 @@
     </div>
 
     <div id="app-container" class="max-w-4xl mx-auto space-y-8" style="display: none;">
+
+        <!-- Non-blocking message container for feedback -->
+        <div id="message-container" style="display: none;"></div>
 
         <!-- Header -->
         <header class="text-center p-6 bg-white rounded-xl container-shadow">
